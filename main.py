@@ -39,9 +39,7 @@ df_all = pd.read_parquet("artifacts/df_all.parquet")
 KNOWN_PLAYERS = set(df_all["name"].dropna().unique())
 
 # 2025–26 engineered features (prediction input)
-df_2526 = pd.read_csv(
-    r"C:\Users\diyen\FPLPredict-backend\artifacts\df_2526_feature_engineered.csv"
-)
+df_2526 = pd.read_csv("artifacts/df_2526_feature_engineered.csv")
 
 print("✅ Known players:", len(KNOWN_PLAYERS))
 print("✅ 2025–26 rows:", df_2526.shape)
