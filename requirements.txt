@@ -3,5 +3,9 @@ uvicorn[standard]
 pandas
 scikit-learn
 xgboost
+requests
 joblib
+scipy
+pydantic
 pyarrow
+python-multipart
