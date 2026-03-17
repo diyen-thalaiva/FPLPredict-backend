@@ -45,9 +45,10 @@ def get_player_enrichment_map(current_gw: int) -> Dict[int, dict]:
     # 1. Map Team IDs to Short Names (e.g., 1 -> "ARS")
     team_map = {t['id']: t['short_name'] for t in bootstrap.get('teams', [])}
     
-    # 2. Build a Team Fixture Schedule
-    # team_id -> { gw_number: {opp: "ARS", fdr: 2} }
-    schedule = {}
+    # 2. Build a Team Fixture Schedule (Handles Blanks AND Double Gameweeks)
+    # format: team_id -> { gw_number: [{"opp": "ARS", "fdr": 4, "is_home": True}] }
+    schedule = {t['id']: {} for t in bootstrap.get('teams', [])}
+    
     for f in fixtures:
         gw = f.get('event')
         if not gw: continue
@@ -55,13 +56,11 @@ def get_player_enrichment_map(current_gw: int) -> Dict[int, dict]:
         home_id = f['team_h']
         away_id = f['team_a']
         
-        # Add home team info
-        if home_id not in schedule: schedule[home_id] = {}
-        schedule[home_id][gw] = {"opp": team_map.get(away_id), "fdr": f['team_h_difficulty']}
+        if gw not in schedule[home_id]: schedule[home_id][gw] = []
+        schedule[home_id][gw].append({"opp": team_map.get(away_id), "fdr": f['team_h_difficulty'], "is_home": True})
         
-        # Add away team info
-        if away_id not in schedule: schedule[away_id] = {}
-        schedule[away_id][gw] = {"opp": team_map.get(home_id), "fdr": f['team_a_difficulty']}
+        if gw not in schedule[away_id]: schedule[away_id][gw] = []
+        schedule[away_id][gw].append({"opp": team_map.get(home_id), "fdr": f['team_a_difficulty'], "is_home": False})
 
     # 3. Create Player Enrichment Map
     enrichment_map = {}
@@ -69,41 +68,40 @@ def get_player_enrichment_map(current_gw: int) -> Dict[int, dict]:
         p_id = player['id']
         t_id = player['team']
         
-        # Get fixtures for the next 3 Gameweeks starting from current_gw
+        # Dynamically fetch the next 3 fixtures
         next_3_fixtures = []
         next_3_fdrs = []
         
         for i in range(3):
             target_gw = current_gw + i
-            f_info = schedule.get(t_id, {}).get(target_gw)
-            if f_info:
-                next_3_fixtures.append(f_info['opp'])
-                next_3_fdrs.append(f_info['fdr'])
+            gw_fixtures = schedule.get(t_id, {}).get(target_gw, [])
+            
+            if not gw_fixtures:
+                # True Blank Gameweek! Assign "Blank" and an FDR of 0
+                next_3_fixtures.append("Blank")
+                next_3_fdrs.append(0)
             else:
-                next_3_fixtures.append("-") # Blank Gameweek
-                next_3_fdrs.append(2)
+                # Handle Single or Double GWs
+                opps = [f"{f['opp']} (H)" if f['is_home'] else f"{f['opp']} (A)" for f in gw_fixtures]
+                next_3_fixtures.append(", ".join(opps))
+                # Grab the FDR of the first match (if DGW, we just use the first match's FDR for simplicity)
+                next_3_fdrs.append(gw_fixtures[0]['fdr'])
         
         transfers_in = player.get("transfers_in_event", 0)
         transfers_out = player.get("transfers_out_event", 0)
-
         total_transfers = transfers_in + transfers_out
-
-        if total_transfers > 0:
-            net_transfer_pct = round(((transfers_in - transfers_out) / total_transfers) * 100, 1)
-        else:
-            net_transfer_pct = 0.0
-
+        net_transfer_pct = round(((transfers_in - transfers_out) / total_transfers) * 100, 1) if total_transfers > 0 else 0.0
 
         enrichment_map[p_id] = {
             'web_name': player.get('web_name', ''),
             'news': player.get('news', ''),
             'now_cost': player.get('now_cost', 0), 
-            'form': float(player.get('form', 0.0)),
+            'form': float(player.get('form', 0.0)), # LIVE Form straight from FPL API
             'ownership_pct': float(player.get('selected_by_percent', 0.0)),
             'total_points': player.get('total_points', 0), 
             'net_transfer_pct': net_transfer_pct,
-            'fixtures': next_3_fixtures,
-            'next_3_fdrs': next_3_fdrs
+            'fixtures': next_3_fixtures, # Now fully dynamic!
+            'next_3_fdrs': next_3_fdrs   # Now fully dynamic!
         }
     
     return enrichment_map

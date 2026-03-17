@@ -10,7 +10,7 @@ from postprocess_predictions import (
     apply_availability_rule,
     apply_integer_rule,
 )
-from fpl_bootstrap import enrich_predictions_with_bootstrap
+from fpl_bootstrap import enrich_predictions_with_bootstrap, get_player_enrichment_map
 # -------------------------------------------------
 # App setup
 # -------------------------------------------------
@@ -585,7 +585,7 @@ def manager_planner(manager_id: int):
     df_pred = enrich_predictions_with_bootstrap(df_pred, target_gw)
     df_pred = apply_availability_rule(df_pred)
     df_pred = apply_integer_rule(df_pred)
-
+    enrichment_map = get_player_enrichment_map(target_gw)
     # --- ADDED: Fetch Bootstrap Data for "Blank" Player Lookups ---
     bootstrap_res = requests.get("https://fantasy.premierleague.com/api/bootstrap-static/").json()
     pos_map = {1: "GKP", 2: "DEF", 3: "MID", 4: "FWD"}
@@ -604,6 +604,7 @@ def manager_planner(manager_id: int):
     team = []
     for pick in picks:
         elem = pick["element"]
+        p_extra = enrichment_map.get(elem, {})
         match = df_pred[df_pred["element"] == elem]
         
         pick_info = pick_map[elem]
@@ -645,17 +646,17 @@ def manager_planner(manager_id: int):
                 "element": int(elem),
                 "name": static.get("web_name", "Unknown"),
                 "web_name": static.get("web_name", "Unknown"),
-                "position": static.get("position", "N/A"),
+                "position": player_static.get(elem, {}).get("position", "N/A"),
                 "is_bench": is_bench,
                 "squad_order": pick_info["squad_position"],
-                "value": static.get("value", 0.0),
-                "ownership_pct": 0.0,
-                "team": static.get("team", "N/A"),
+                "value": p_extra.get('now_cost', 0) / 10,
+                "ownership_pct": p_extra.get('ownership_pct', 0.0),
+                "team": player_static.get(elem, {}).get("team", "N/A"),
                 "opponent": "BLANK",
-                "fdr": 5,
-                "fixtures": [],
-                "next_3_fdrs": [],
-                "form": 0.0,
+                "fdr": 0,
+                "fixtures": p_extra.get('fixtures', []),
+                "next_3_fdrs": p_extra.get('next_3_fdrs', []),
+                "form": p_extra.get('form', 0.0),
                 "pred_points": 0,
                 "pred_points_base": 0,
                 "is_captain": pick_info["is_captain"],
