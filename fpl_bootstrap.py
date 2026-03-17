@@ -75,7 +75,7 @@ def get_player_enrichment_map(current_gw: int) -> Dict[int, dict]:
             gw_fixtures = schedule.get(t_id, {}).get(target_gw, [])
             
             if not gw_fixtures:
-                next_3_fixtures.append("Blank")
+                next_3_fixtures.append("-")
                 next_3_fdrs.append(0)
             else:
                 # --- MODIFIED: Removed (H)/(A) and joining by comma ---
