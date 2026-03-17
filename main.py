@@ -350,20 +350,16 @@ def manager_prediction(manager_id: int):
             "squad_position": int(pick.get("position", 0)) # 1-11 are starters, 12-15 bench
         } for pick in picks
     }
-    # --- ADD THIS: Reset multipliers if we fell back to a previous week ---
+
+    # --- Reset multipliers if we fell back to a previous week ---
     if team_source_gw < target_gw:
         for elem in pick_map:
-            # If captain, multiplier should be 2. Otherwise, 1.
             if pick_map[elem]["is_captain"]:
                 pick_map[elem]["multiplier"] = 2
             else:
                 pick_map[elem]["multiplier"] = 1
 
-            # --------------------------------------------------
     # Vice-Captain Promotion Logic
-    # --------------------------------------------------
-
-    # Find captain and vice captain elements
     captain_elem = None
     vice_elem = None
 
@@ -373,15 +369,10 @@ def manager_prediction(manager_id: int):
         if info["is_vice_captain"]:
             vice_elem = elem
 
-    # If captain exists and is on bench (position > 11)
     if captain_elem:
         captain_on_bench = pick_map[captain_elem]["squad_position"] > 11
-
         if captain_on_bench and vice_elem:
-            # Remove captain multiplier
             pick_map[captain_elem]["multiplier"] = 1
-
-            # Give vice captain multiplier
             pick_map[vice_elem]["multiplier"] = 2
 
     # 2) Run ML Prediction Pipeline
@@ -398,55 +389,87 @@ def manager_prediction(manager_id: int):
     if df_pred is None or df_pred.empty:
         raise HTTPException(status_code=500, detail="Prediction failed")
 
-    df_pred = enrich_predictions_with_bootstrap(df_pred,target_gw)
+    df_pred = enrich_predictions_with_bootstrap(df_pred, target_gw)
     df_pred = apply_availability_rule(df_pred)
     df_pred = apply_integer_rule(df_pred)
+
+    # --- ADDED: Fetch Bootstrap Data for "Blank" Player Lookups ---
+    bootstrap_res = requests.get("https://fantasy.premierleague.com/api/bootstrap-static/").json()
+    pos_map = {1: "GKP", 2: "DEF", 3: "MID", 4: "FWD"}
+    team_map_lookup = {t["id"]: t["name"] for t in bootstrap_res["teams"]}
     
-    # 3) Match picks with predictions (Looping through 'picks' to preserve order/position)
+    player_static = {
+        p["id"]: {
+            "web_name": p["web_name"],
+            "position": pos_map.get(p["element_type"]),
+            "team": team_map_lookup.get(p["team"]),
+            "value": p["now_cost"] / 10
+        } 
+        for p in bootstrap_res["elements"]
+    }
+    
+    # 3) Match picks with predictions (Preserve all 15 players)
     team = []
     for pick in picks:
         elem = pick["element"]
         match = df_pred[df_pred["element"] == elem]
         
-        if match.empty:
-            continue
-
-        row = match.iloc[0]
         pick_info = pick_map[elem]
-        
-        # Identification Logic: Positions 12-15 are the bench in FPL API
         is_bench = pick_info["squad_position"] > 11
-        
-        base_points = int(row["pred_points"])
         multiplier = pick_info["multiplier"]
-        final_points = int(base_points * multiplier) 
-        
-        team.append({
-            "element": int(elem),
-            "name": str(row["name"]),
-            "web_name": str(row.get("web_name", "")),
-            "position": str(row["position"]),   # GKP, DEF, MID, FWD
-            "is_bench": is_bench,               # Crucial for Frontend styling
-            "squad_order": pick_info["squad_position"],
-            "value": float(row["value"]),
-            "team": str(row["team_name"]),
-            "opponent": str(row["opponent_name"]),
-            "fdr": int(row["fixture_1_5_fdr"]),
-            "form": float(row.get("form", 0.0)),
-            "pred_points": final_points,
-            "pred_points_base": base_points,
-            "is_captain": pick_info["is_captain"],
-            "is_vice_captain": pick_info["is_vice_captain"],
-            "multiplier": multiplier,
-            "news": str(row.get("news", "")),
-        })
 
-    # 4) Total Point Calculation (Corrected logic)
+        if not match.empty:
+            # Player HAS a fixture
+            row = match.iloc[0]
+            base_points = int(row["pred_points"])
+            final_points = int(base_points * multiplier) 
+            
+            team.append({
+                "element": int(elem),
+                "name": str(row["name"]),
+                "web_name": str(row.get("web_name", "")),
+                "position": str(row["position"]),
+                "is_bench": is_bench,
+                "squad_order": pick_info["squad_position"],
+                "value": float(row["value"]),
+                "team": str(row["team_name"]),
+                "opponent": str(row["opponent_name"]),
+                "fdr": int(row["fixture_1_5_fdr"]),
+                "form": float(row.get("form", 0.0)),
+                "pred_points": final_points,
+                "pred_points_base": base_points,
+                "is_captain": pick_info["is_captain"],
+                "is_vice_captain": pick_info["is_vice_captain"],
+                "multiplier": multiplier,
+                "news": str(row.get("news", "")),
+            })
+        else:
+            # Player is BLANKING
+            static = player_static.get(elem, {})
+            team.append({
+                "element": int(elem),
+                "name": static.get("web_name", "Unknown"),
+                "web_name": static.get("web_name", "Unknown"),
+                "position": static.get("position", "N/A"),
+                "is_bench": is_bench,
+                "squad_order": pick_info["squad_position"],
+                "value": static.get("value", 0.0),
+                "team": static.get("team", "N/A"),
+                "opponent": "BLANK",
+                "fdr": 5,
+                "form": 0.0,
+                "pred_points": 0,
+                "pred_points_base": 0,
+                "is_captain": pick_info["is_captain"],
+                "is_vice_captain": pick_info["is_vice_captain"],
+                "multiplier": multiplier,
+                "news": "Blank Gameweek",
+            })
+
+    # 4) Total Point Calculation
     if active_chip == "bboost":
-        # Bench Boost active: everyone contributes
         total_pred = int(sum(p["pred_points"] for p in team))
     else:
-        # Standard or Triple Captain: only starters contribute (even if Triple Captain)
         total_pred = int(sum(p["pred_points"] for p in team if not p["is_bench"]))
 
     return {
@@ -454,8 +477,8 @@ def manager_prediction(manager_id: int):
         "manager_name": manager_name,
         "team_name": team_name,
         "season": "2025-26",
-        "prediction_gw": target_gw,          # target prediction GW
-        "team_source_gw": team_source_gw,  # actual lineup GW used
+        "prediction_gw": target_gw,
+        "team_source_gw": team_source_gw,
         "active_chip": str(active_chip) if active_chip else None,
         "available_chips": available_chips,
         "chip_history": chips_used,
