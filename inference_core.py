@@ -164,7 +164,6 @@ def _align_and_validate_X(X_inf, df_full, expected_features, use_crossseason=Fal
     If use_crossseason=True and X_inf contains *_cross_last* columns, copy them into *_last* names.
     """
     X = X_inf.copy()
-
     # optional: cross-season mapping on X as well
     if use_crossseason:
         for col in list(X.columns):
@@ -176,7 +175,6 @@ def _align_and_validate_X(X_inf, df_full, expected_features, use_crossseason=Fal
                 target = col.replace("_cross_last5", "_last5")
                 if target not in X.columns:
                     X[target] = X[col]
-
     # Fill missing expected features with median from df_full or zero
     for f in expected_features:
         if f not in X.columns:

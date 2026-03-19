@@ -282,8 +282,28 @@ def predict_next_gw(gw: int):
         ].to_dict(orient="records"),
     }
 
+
+@app.get("/manager/{manager_id}/validate")
+def validate_manager(manager_id: int):
+    """
+    Lightweight endpoint to check if a Manager ID is valid 
+    before running the heavy prediction pipeline.
+    """
+    try:
+        r = requests.get(f"https://fantasy.premierleague.com/api/entry/{manager_id}/", timeout=5)
+        # If the ID doesn't exist, the FPL API returns a 404, triggering an exception here
+        r.raise_for_status() 
+        
+        manager_info = r.json()
+        return {
+            "valid": True, 
+            "team_name": manager_info.get("name", "Unknown Team")
+        }
+    except requests.exceptions.RequestException:
+        raise HTTPException(status_code=404, detail="Invalid Manager ID or FPL API is down")
+
 # -------------------------------------------------
-# ⭐ PREDICTION ENDPOINT FOR PREDICTION PAGE (CORE PROTOTYPE)
+# PREDICTION ENDPOINT FOR PREDICTION PAGE
 # -------------------------------------------------
 @app.get("/manager/{manager_id}/prediction")
 def manager_prediction(manager_id: int):
