@@ -415,7 +415,7 @@ def manager_prediction(manager_id: int):
 
     # --- ADDED: Fetch Bootstrap Data for "Blank" Player Lookups ---
     bootstrap_res = requests.get("https://fantasy.premierleague.com/api/bootstrap-static/").json()
-    pos_map = {1: "GKP", 2: "DEF", 3: "MID", 4: "FWD"}
+    pos_map = {1: "GK", 2: "DEF", 3: "MID", 4: "FWD"}
     team_map_lookup = {t["id"]: t["name"] for t in bootstrap_res["teams"]}
     
     player_static = {
@@ -608,7 +608,7 @@ def manager_planner(manager_id: int):
     enrichment_map = get_player_enrichment_map(target_gw)
     # --- ADDED: Fetch Bootstrap Data for "Blank" Player Lookups ---
     bootstrap_res = requests.get("https://fantasy.premierleague.com/api/bootstrap-static/").json()
-    pos_map = {1: "GKP", 2: "DEF", 3: "MID", 4: "FWD"}
+    pos_map = {1: "GK", 2: "DEF", 3: "MID", 4: "FWD"}
     team_map_lookup = {t["id"]: t["name"] for t in bootstrap_res["teams"]}
     
     player_static = {
